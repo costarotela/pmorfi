@@ -1,0 +1,6 @@
+{
+  "name": "Punto Morfi - Casa de Comidas & Delivery",
+  "description": "App para Punto Morfi, casa de comidas estilo PedidosYa pero casero, con cobro por Mercado Pago y rotación de alias al azar, panel en tiempo real, notificaciones y reportes automáticos.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  h1, h2, h3, .font-heading, .font-morfi {
+    font-family: 'Fredoka', 'Plus Jakarta Sans', sans-serif;
+  }
+}
+
+/* Punto Morfi Brand Palette Utility Classes */
+:root {
+  --color-morfi-teal: #759694;
+  --color-morfi-teal-dark: #1b2827;
+  --color-morfi-teal-surface: #243635;
+  --color-morfi-coral: #f88d63;
+  --color-morfi-yellow: #e2e663;
+}
