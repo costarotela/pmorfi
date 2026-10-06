@@ -1,147 +1,193 @@
+// ═══════════════════════════════════════════════════════════════
+// STORAGE SERVICE — versión BACKEND REAL (Fase 2/3 del plan).
+// Misma API pública que la versión AI Studio (localStorage), pero:
+//   • hidrata desde Postgres (paperclip-db, schema pmorfi) vía /api/bootstrap
+//   • persiste cada escritura contra el backend (fire-and-forget con log)
+//   • sincroniza entre dispositivos (celular cliente ↔ tablet cocina ↔ caja)
+//     vía SSE (/api/events) reemplazando el BroadcastChannel local
+// Ninguna vista (cliente/cocina/caja/kiosk/admin) necesita cambios.
+// Los mocks de AI Studio NO se usan como fallback: si el backend no
+// responde, la app muestra error explícito (doctrina: cero datos falsos).
+// ═══════════════════════════════════════════════════════════════
 import { MenuItem, MercadoPagoAlias, Order, OrderStatus, SalesReportMetrics } from '../types';
-import { INITIAL_MENU_ITEMS, INITIAL_MP_ALIASES, INITIAL_HISTORICAL_ORDERS } from '../data/mockData';
 import { soundEffects } from './sound';
 import { pushNotifications } from './pushNotifications';
 
-const STORAGE_KEYS = {
-  MENU: 'punto_morfi_menu_v2',
-  ALIASES: 'punto_morfi_mp_aliases_v2',
-  ORDERS: 'punto_morfi_orders_v2',
-  ACTIVE_ORDER_ID: 'punto_morfi_active_order_id',
-};
+const API = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
+const CLIENT_ID =
+  'cli-' + Math.random().toString(36).slice(2) + '-' + Date.now().toString(36);
+const ACTIVE_ORDER_KEY = 'punto…e_id';
 
-type StorageEventCallback = (type: 'order_created' | 'order_updated' | 'alias_updated' | 'menu_updated', payload: unknown) => void;
+type EventType =
+  | 'order_created'
+  | 'order_updated'
+  | 'alias_updated'
+  | 'menu_updated'
+  | 'orders_bulk';
+type StorageEventCallback = (type: EventType, payload: unknown) => void;
 
 class StorageService {
-  private channel: BroadcastChannel | null = null;
   private listeners: Set<StorageEventCallback> = new Set();
+  private menu: MenuItem[] = [];
+  private aliasCache: MercadoPagoAlias[] = [];
+  private ordersCache: Order[] = [];
+  private es: EventSource | null = null;
+  public ready = false;
 
-  constructor() {
-    if (typeof window !== 'undefined') {
-      try {
-        this.channel = new BroadcastChannel('punto_morfi_sync_channel');
-        this.channel.onmessage = (event) => {
-          const { type, payload } = event.data || {};
-          this.notifySubscribers(type, payload, false);
-        };
-      } catch (e) {
-        console.warn('BroadcastChannel not supported', e);
-      }
-
-      window.addEventListener('storage', (e) => {
-        if (e.key === STORAGE_KEYS.ORDERS) {
-          this.notifySubscribers('order_updated', null, false);
-        }
-      });
-    }
+  // ── Arranque: hidratar desde la BD real ──────────────────────
+  public async init(): Promise<void> {
+    await this.refetchBootstrap();
+    this.connectEvents();
   }
 
-  private notifySubscribers(type: 'order_created' | 'order_updated' | 'alias_updated' | 'menu_updated', payload: unknown, broadcast = true) {
-    this.listeners.forEach((fn) => {
-      try {
-        fn(type, payload);
-      } catch (err) {
-        console.error('Error calling listener:', err);
-      }
-    });
+  private async refetchBootstrap(): Promise<void> {
+    const r = await fetch(`${API}/bootstrap`);
+    if (!r.ok) throw new Error(`backend respondió ${r.status}`);
+    const d = await r.json();
+    this.menu = d.menu || [];
+    this.ordersCache = d.orders || [];
+    this.aliasCache = d.aliases || [];
+    this.ready = true;
+  }
 
-    if (broadcast && this.channel) {
-      this.channel.postMessage({ type, payload });
+  private connectEvents() {
+    if (typeof window === 'undefined') return;
+    this.es = new EventSource(`${API}/events?clientId=${CLIENT_ID}`);
+    this.es.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (!msg.type || msg.type === 'hello') return;
+        if (msg.origin === CLIENT_ID) return; // eco propio: ya aplicado local
+        this.applyRemote(msg.type as EventType, msg.payload);
+      } catch { /* ignore */ }
+    };
+    // EventSource reconecta solo ante cortes.
+  }
+
+  private applyRemote(type: EventType, payload: unknown) {
+    if (type === 'order_created' && payload) {
+      const o = payload as Order;
+      this.ordersCache = [o, ...this.ordersCache.filter((x) => x.id !== o.id)];
+      soundEffects.playNewOrderBell();
+      pushNotifications.sendNotification(
+        `🔔 Nuevo Pedido ${o.orderNumber}`,
+        `${o.customerName} pidió por $${(o.total || 0).toLocaleString('es-AR')}`,
+        o.id
+      );
+    } else if (type === 'order_updated' && payload) {
+      const o = payload as Order;
+      this.ordersCache = this.ordersCache.map((x) => (x.id === o.id ? o : x));
+      soundEffects.playStatusUpdateChime();
+      pushNotifications.sendNotification(
+        `🔄 Pedido ${o.orderNumber}`,
+        `Nuevo estado: ${o.status}`,
+        o.id
+      );
+    } else if (type === 'menu_updated' && Array.isArray(payload)) {
+      this.menu = payload as MenuItem[];
+    } else if (type === 'alias_updated' && Array.isArray(payload)) {
+      this.aliasCache = payload as MercadoPagoAlias[];
+    } else if (type === 'orders_bulk') {
+      void this.refetchBootstrap();
     }
+    this.notifySubscribers(type, payload);
+  }
+
+  private notifySubscribers(type: EventType, payload: unknown) {
+    this.listeners.forEach((fn) => {
+      try { fn(type, payload); } catch (err) { console.error('Error calling listener:', err); }
+    });
   }
 
   public subscribe(cb: StorageEventCallback): () => void {
     this.listeners.add(cb);
-    return () => {
-      this.listeners.delete(cb);
-    };
+    return () => { this.listeners.delete(cb); };
+  }
+
+  // ── Persistencia remota (fire-and-forget con log) ────────────
+  private async put(pathname: string, body: Record<string, unknown>): Promise<void> {
+    try {
+      const r = await fetch(`${API}${pathname}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, clientId: CLIENT_ID }),
+      });
+      if (!r.ok) console.error(`PUT ${pathname} →`, r.status);
+    } catch (e) {
+      console.error(`PUT ${pathname} falló (¿backend caído?):`, e);
+    }
+  }
+
+  private async postOrder(order: Order): Promise<void> {
+    try {
+      const r = await fetch(`${API}/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order, clientId: CLIENT_ID }),
+      });
+      if (!r.ok) console.error('POST orders →', r.status);
+    } catch (e) {
+      console.error('POST orders falló (¿backend caído?):', e);
+    }
   }
 
   // --- MENU ITEMS ---
-  public getMenuItems(): MenuItem[] {
-    if (typeof window === 'undefined') return INITIAL_MENU_ITEMS;
-    const stored = localStorage.getItem(STORAGE_KEYS.MENU);
-    if (!stored) {
-      localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(INITIAL_MENU_ITEMS));
-      return INITIAL_MENU_ITEMS;
-    }
-    try {
-      return JSON.parse(stored);
-    } catch {
-      return INITIAL_MENU_ITEMS;
-    }
-  }
+  public getMenuItems(): MenuItem[] { return this.menu; }
 
   public saveMenuItems(items: MenuItem[]) {
-    localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(items));
+    this.menu = items;
     this.notifySubscribers('menu_updated', items);
+    void this.put('/menu', { items });
   }
 
   public toggleItemAvailability(id: string) {
-    const items = this.getMenuItems().map((item) =>
-      item.id === id ? { ...item, isAvailable: !item.isAvailable } : item
-    );
-    this.saveMenuItems(items);
+    this.saveMenuItems(this.menu.map((item) =>
+      item.id === id ? { ...item, isAvailable: !item.isAvailable } : item));
   }
 
   public updateItemPrice(id: string, newPrice: number) {
-    const items = this.getMenuItems().map((item) =>
-      item.id === id ? { ...item, price: newPrice } : item
-    );
-    this.saveMenuItems(items);
+    this.saveMenuItems(this.menu.map((item) =>
+      item.id === id ? { ...item, price: newPrice } : item));
   }
 
   public addMenuItem(itemData: Omit<MenuItem, 'id'>): MenuItem {
-    const newItem: MenuItem = {
-      ...itemData,
-      id: 'menu-' + Date.now(),
-    };
-    const items = [newItem, ...this.getMenuItems()];
-    this.saveMenuItems(items);
+    const newItem: MenuItem = { ...itemData, id: 'menu-' + Date.now() };
+    this.saveMenuItems([newItem, ...this.menu]);
     return newItem;
   }
 
   public updateMenuItem(id: string, updates: Partial<MenuItem>) {
-    const items = this.getMenuItems().map((item) =>
-      item.id === id ? { ...item, ...updates } : item
-    );
-    this.saveMenuItems(items);
+    this.saveMenuItems(this.menu.map((item) => (item.id === id ? { ...item, ...updates } : item)));
   }
 
   public deleteMenuItem(id: string) {
-    const items = this.getMenuItems().filter((item) => item.id !== id);
-    this.saveMenuItems(items);
+    this.saveMenuItems(this.menu.filter((item) => item.id !== id));
   }
 
   public resetMenuToDefaults() {
-    this.saveMenuItems(INITIAL_MENU_ITEMS);
+    // En modo backend "defaults" = menú vacío: los datos reales los carga el
+    // cliente. (El mock de AI Studio no se repone: cero datos falsos.)
+    this.saveMenuItems([]);
   }
 
   // Backup & Direct Database Access (Export/Import JSON)
   public exportDatabaseJSON(): string {
-    const database = {
-      version: '1.0',
+    return JSON.stringify({
+      version: '2.0-backend',
       exportedAt: new Date().toISOString(),
       store: 'Punto Morfi',
       menu: this.getMenuItems(),
       aliases: this.getAliases(),
       orders: this.getOrders(),
-    };
-    return JSON.stringify(database, null, 2);
+    }, null, 2);
   }
 
   public importDatabaseJSON(jsonString: string): boolean {
     try {
       const data = JSON.parse(jsonString);
-      if (data.menu && Array.isArray(data.menu)) {
-        this.saveMenuItems(data.menu);
-      }
-      if (data.aliases && Array.isArray(data.aliases)) {
-        this.saveAliases(data.aliases);
-      }
-      if (data.orders && Array.isArray(data.orders)) {
-        this.saveOrders(data.orders);
-      }
+      if (data.menu && Array.isArray(data.menu)) this.saveMenuItems(data.menu);
+      if (data.aliases && Array.isArray(data.aliases)) this.saveAliases(data.aliases);
+      if (data.orders && Array.isArray(data.orders)) this.saveOrders(data.orders);
       return true;
     } catch (e) {
       console.error('Invalid database JSON format:', e);
@@ -150,166 +196,129 @@ class StorageService {
   }
 
   // --- MERCADO PAGO ALIASES ---
-  public getAliases(): MercadoPagoAlias[] {
-    if (typeof window === 'undefined') return INITIAL_MP_ALIASES;
-    const stored = localStorage.getItem(STORAGE_KEYS.ALIASES);
-    if (!stored) {
-      localStorage.setItem(STORAGE_KEYS.ALIASES, JSON.stringify(INITIAL_MP_ALIASES));
-      return INITIAL_MP_ALIASES;
-    }
-    try {
-      return JSON.parse(stored);
-    } catch {
-      return INITIAL_MP_ALIASES;
-    }
-  }
+  public getAliases(): MercadoPagoAlias[] { return this.aliasCache; }
 
   public saveAliases(aliases: MercadoPagoAlias[]) {
-    localStorage.setItem(STORAGE_KEYS.ALIASES, JSON.stringify(aliases));
+    this.aliasCache = aliases;
     this.notifySubscribers('alias_updated', aliases);
+    void this.put('/aliases', { aliases });
   }
 
   public toggleAliasActive(id: string) {
-    const aliases = this.getAliases().map((a) =>
-      a.id === id ? { ...a, isActive: !a.isActive } : a
-    );
-    this.saveAliases(aliases);
+    this.saveAliases(this.aliasCache.map((a) => (a.id === id ? { ...a, isActive: !a.isActive } : a)));
   }
 
   public addAlias(alias: Omit<MercadoPagoAlias, 'id' | 'totalCollected' | 'ordersCount'>) {
     const newAlias: MercadoPagoAlias = {
-      ...alias,
-      id: 'alias-' + Date.now(),
-      totalCollected: 0,
-      ordersCount: 0,
+      ...alias, id: 'alias-' + Date.now(), totalCollected: 0, ordersCount: 0,
     };
-    const aliases = [...this.getAliases(), newAlias];
-    this.saveAliases(aliases);
+    this.saveAliases([...this.aliasCache, newAlias]);
     return newAlias;
   }
 
   public updateAlias(id: string, updates: Partial<MercadoPagoAlias>) {
-    const aliases = this.getAliases().map((a) => (a.id === id ? { ...a, ...updates } : a));
-    this.saveAliases(aliases);
+    this.saveAliases(this.aliasCache.map((a) => (a.id === id ? { ...a, ...updates } : a)));
   }
 
   public deleteAlias(id: string) {
-    const aliases = this.getAliases().filter((a) => a.id !== id);
-    this.saveAliases(aliases);
+    this.saveAliases(this.aliasCache.filter((a) => a.id !== id));
   }
 
   /**
-   * Selects a random active Mercado Pago alias from the pool of 3-4 configured aliases.
-   * If none is active, falls back to the first available alias.
+   * Alias activo aleatorio del pool. Si todavía no se cargaron aliases REALES
+   * del cliente, devuelve un placeholder explícito (nunca datos falsos: los
+   * aliases inventados de la maqueta AI Studio NO se migraron a la BD).
    */
   public getRandomActiveAlias(): MercadoPagoAlias {
-    const aliases = this.getAliases();
-    const activeAliases = aliases.filter((a) => a.isActive);
-    if (activeAliases.length === 0) {
-      return aliases[0] || INITIAL_MP_ALIASES[0];
+    const active = this.aliasCache.filter((a) => a.isActive);
+    const pool = active.length > 0 ? active : this.aliasCache;
+    if (pool.length === 0) {
+      return {
+        id: 'sin-alias',
+        alias: 'PENDIENTE-CARGAR-REAL',
+        holder: 'A definir por el cliente',
+        cuitOrDni: '',
+        cvu: '',
+        bankOrMp: 'Mercado Pago',
+        isActive: false,
+        totalCollected: 0,
+        ordersCount: 0,
+        dailyLimit: 0,
+        colorTag: 'coral',
+      };
     }
-    const randomIndex = Math.floor(Math.random() * activeAliases.length);
-    return activeAliases[randomIndex];
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
   // --- ORDERS ---
-  public getOrders(): Order[] {
-    if (typeof window === 'undefined') return INITIAL_HISTORICAL_ORDERS;
-    const stored = localStorage.getItem(STORAGE_KEYS.ORDERS);
-    if (!stored) {
-      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(INITIAL_HISTORICAL_ORDERS));
-      return INITIAL_HISTORICAL_ORDERS;
-    }
-    try {
-      return JSON.parse(stored);
-    } catch {
-      return INITIAL_HISTORICAL_ORDERS;
-    }
-  }
+  public getOrders(): Order[] { return this.ordersCache; }
 
   public saveOrders(orders: Order[]) {
-    localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+    this.ordersCache = orders;
+    void this.put('/orders', { orders });
   }
 
   public getOrderById(id: string): Order | undefined {
-    return this.getOrders().find((o) => o.id === id);
+    return this.ordersCache.find((o) => o.id === id);
   }
 
   public getActiveCustomerOrderId(): string | null {
     if (typeof window === 'undefined') return null;
-    return localStorage.getItem(STORAGE_KEYS.ACTIVE_ORDER_ID);
+    return localStorage.getItem(ACTIVE_ORDER_KEY);
   }
 
   public setActiveCustomerOrderId(orderId: string | null) {
     if (typeof window === 'undefined') return;
-    if (orderId) {
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_ORDER_ID, orderId);
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.ACTIVE_ORDER_ID);
-    }
+    if (orderId) localStorage.setItem(ACTIVE_ORDER_KEY, orderId);
+    else localStorage.removeItem(ACTIVE_ORDER_KEY);
   }
 
-  public createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt' | 'timeline'>): Order {
-    const orders = this.getOrders();
-    const orderNumber = `#PM-${1000 + orders.length + 1}`;
+  public createOrder(
+    orderData: Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt' | 'timeline'>
+  ): Order {
     const now = new Date().toISOString();
+    // orderNumber único por timestamp (el contador por longitud no es fiable multi-dispositivo)
+    const orderNumber = `#PM-${Date.now().toString().slice(-6)}`;
 
     const newOrder: Order = {
       ...orderData,
-      id: 'ord-' + Date.now(),
+      id: 'ord-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
       orderNumber,
       createdAt: now,
       updatedAt: now,
-      timeline: [
-        {
-          status: orderData.status,
-          timestamp: now,
-          note: orderData.paymentMethod === 'mercadopago_alias'
-            ? `Pedido creado con alias asignado: ${orderData.assignedAlias?.alias || 'MP'}`
-            : 'Pedido creado (pago en mano)',
-        },
-      ],
+      timeline: [{
+        status: orderData.status,
+        timestamp: now,
+        note: orderData.paymentMethod === 'mercadopago_alias'
+          ? `Pedido creado con alias asignado: ${orderData.assignedAlias?.alias || 'MP'}`
+          : 'Pedido creado (pago en mano)',
+      }],
     };
 
-    const updatedOrders = [newOrder, ...orders];
-    this.saveOrders(updatedOrders);
+    this.ordersCache = [newOrder, ...this.ordersCache];
     this.setActiveCustomerOrderId(newOrder.id);
 
-    // If assigned to an alias, increment alias stats
+    // stats del alias asignado
     if (newOrder.assignedAlias) {
       const aliasId = newOrder.assignedAlias.id;
-      const aliases = this.getAliases().map((a) => {
-        if (a.id === aliasId) {
-          return {
-            ...a,
-            totalCollected: a.totalCollected + newOrder.total,
-            ordersCount: a.ordersCount + 1,
-          };
-        }
-        return a;
-      });
-      this.saveAliases(aliases);
+      this.saveAliases(this.aliasCache.map((a) =>
+        a.id === aliasId
+          ? { ...a, totalCollected: a.totalCollected + newOrder.total, ordersCount: a.ordersCount + 1 }
+          : a));
     }
 
-    // Play incoming order bell for the admin
     soundEffects.playNewOrderBell();
-
-    // Trigger push alert
     pushNotifications.sendNotification(
       `🔔 Nuevo Pedido ${newOrder.orderNumber}`,
       `${newOrder.customerName} pidió por $${newOrder.total.toLocaleString('es-AR')} (${newOrder.deliveryMethod === 'delivery' ? 'Envío' : 'Retiro'})`,
       newOrder.id
     );
-
     this.notifySubscribers('order_created', newOrder);
+    void this.postOrder(newOrder); // → Postgres + SSE a cocina/caja + Telegram al dueño
     return newOrder;
   }
 
   public updateOrderStatus(orderId: string, newStatus: OrderStatus, customNote?: string): Order | null {
-    const orders = this.getOrders();
-    let updatedOrder: Order | null = null;
-    const now = new Date().toISOString();
-
     const defaultNotes: Record<OrderStatus, string> = {
       pendiente_pago: 'Esperando acreditación de pago',
       confirmado: 'Pago verificado. Orden aceptada.',
@@ -318,7 +327,6 @@ class StorageService {
       entregado: '¡Pedido entregado con éxito! Que lo disfrutes.',
       cancelado: 'Pedido cancelado.',
     };
-
     const statusTitles: Record<OrderStatus, string> = {
       pendiente_pago: 'Pendiente de pago',
       confirmado: '✅ ¡Pedido Confirmado!',
@@ -328,93 +336,68 @@ class StorageService {
       cancelado: '❌ Pedido Cancelado',
     };
 
-    const updatedList = orders.map((order) => {
-      if (order.id === orderId) {
-        const note = customNote || defaultNotes[newStatus];
-        const newTimeline = [
-          ...order.timeline,
-          {
-            status: newStatus,
-            timestamp: now,
-            note,
-          },
-        ];
-        updatedOrder = {
-          ...order,
-          status: newStatus,
-          updatedAt: now,
-          timeline: newTimeline,
-        };
-        return updatedOrder;
-      }
-      return order;
+    const now = new Date().toISOString();
+    let updatedOrder: Order | null = null;
+    this.ordersCache = this.ordersCache.map((order) => {
+      if (order.id !== orderId) return order;
+      const note = customNote || defaultNotes[newStatus];
+      updatedOrder = {
+        ...order,
+        status: newStatus,
+        updatedAt: now,
+        timeline: [...order.timeline, { status: newStatus, timestamp: now, note }],
+      };
+      return updatedOrder;
     });
 
     if (updatedOrder) {
-      this.saveOrders(updatedList);
-
-      // Play sound
-      if (newStatus === 'confirmado' || newStatus === 'entregado') {
-        soundEffects.playPaymentSuccessChime();
-      } else {
-        soundEffects.playStatusUpdateChime();
-      }
-
-      // Send push notification
+      const uo = updatedOrder as Order;
+      if (newStatus === 'confirmado' || newStatus === 'entregado') soundEffects.playPaymentSuccessChime();
+      else soundEffects.playStatusUpdateChime();
       pushNotifications.sendNotification(
         statusTitles[newStatus],
-        `${(updatedOrder as Order).orderNumber}: ${customNote || defaultNotes[newStatus]}`,
+        `${uo.orderNumber}: ${customNote || defaultNotes[newStatus]}`,
         orderId
       );
-
-      this.notifySubscribers('order_updated', updatedOrder);
+      this.notifySubscribers('order_updated', uo);
+      void this.put(`/orders/${orderId}`, { order: uo });
     }
-
     return updatedOrder;
   }
 
   public recordPaymentProof(orderId: string, referenceCode: string) {
-    const orders = this.getOrders();
-    let updatedOrder: Order | null = null;
     const now = new Date().toISOString();
-
-    const updatedList = orders.map((order) => {
-      if (order.id === orderId) {
-        updatedOrder = {
-          ...order,
-          paymentReference: referenceCode,
-          updatedAt: now,
-          timeline: [
-            ...order.timeline,
-            {
-              status: order.status,
-              timestamp: now,
-              note: `Cliente ingresó comprobante / ref: ${referenceCode}`,
-            },
-          ],
-        };
-        return updatedOrder;
-      }
-      return order;
+    let updatedOrder: Order | null = null;
+    this.ordersCache = this.ordersCache.map((order) => {
+      if (order.id !== orderId) return order;
+      updatedOrder = {
+        ...order,
+        paymentReference: referenceCode,
+        updatedAt: now,
+        timeline: [...order.timeline, {
+          status: order.status, timestamp: now,
+          note: `Cliente ingresó comprobante / ref: ${referenceCode}`,
+        }],
+      };
+      return updatedOrder;
     });
-
     if (updatedOrder) {
-      this.saveOrders(updatedList);
+      const uo = updatedOrder as Order;
       pushNotifications.sendNotification(
         '💰 Comprobante Registrado',
-        `Pedido ${(updatedOrder as Order).orderNumber}: Ref ${referenceCode}`,
+        `Pedido ${uo.orderNumber}: Ref ${referenceCode}`,
         orderId
       );
-      this.notifySubscribers('order_updated', updatedOrder);
+      this.notifySubscribers('order_updated', uo);
+      void this.put(`/orders/${orderId}`, { order: uo });
     }
   }
 
-  // --- SALES REPORTS GENERATOR (DAILY & WEEKLY AUTOMATIC) ---
+  // --- SALES REPORTS GENERATOR (cálculo puro sobre la cache — idéntico) ---
   public getSalesReport(timeframe: 'daily' | 'weekly'): SalesReportMetrics {
     const orders = this.getOrders();
     const now = new Date();
 
-    // Filter relevant orders
     const relevantOrders = orders.filter((order) => {
       if (order.status === 'cancelado') return false;
       const orderDate = new Date(order.createdAt);
@@ -424,12 +407,10 @@ class StorageService {
           orderDate.getMonth() === now.getMonth() &&
           orderDate.getFullYear() === now.getFullYear()
         );
-      } else {
-        // Last 7 days
-        const diffMs = now.getTime() - orderDate.getTime();
-        const diffDays = diffMs / (1000 * 60 * 60 * 24);
-        return diffDays <= 7;
       }
+      const diffMs = now.getTime() - orderDate.getTime();
+      const diffDays = diffMs / (1000 * 60 * 60 * 24);
+      return diffDays <= 7;
     });
 
     const totalRevenue = relevantOrders.reduce((sum, o) => sum + o.total, 0);
@@ -439,34 +420,17 @@ class StorageService {
     const pendingOrdersCount = relevantOrders.filter((o) => o.status !== 'entregado' && o.status !== 'cancelado').length;
     const canceledOrdersCount = orders.filter((o) => o.status === 'cancelado').length;
 
-    // Revenue by payment method
-    const revenueByPaymentMethod = {
-      mercadopago: 0,
-      efectivo: 0,
-      pos_tarjeta: 0,
-    };
+    const revenueByPaymentMethod = { mercadopago: 0, efectivo: 0, pos_tarjeta: 0 };
     relevantOrders.forEach((o) => {
-      if (o.paymentMethod === 'mercadopago_alias') {
-        revenueByPaymentMethod.mercadopago += o.total;
-      } else if (o.paymentMethod === 'efectivo') {
-        revenueByPaymentMethod.efectivo += o.total;
-      } else {
-        revenueByPaymentMethod.pos_tarjeta += o.total;
-      }
+      if (o.paymentMethod === 'mercadopago_alias') revenueByPaymentMethod.mercadopago += o.total;
+      else if (o.paymentMethod === 'efectivo') revenueByPaymentMethod.efectivo += o.total;
+      else revenueByPaymentMethod.pos_tarjeta += o.total;
     });
 
-    // Revenue by Mercado Pago alias
     const aliasMap = new Map<string, { aliasId: string; aliasName: string; holder: string; amount: number; ordersCount: number }>();
     this.getAliases().forEach((a) => {
-      aliasMap.set(a.id, {
-        aliasId: a.id,
-        aliasName: a.alias,
-        holder: a.holder,
-        amount: 0,
-        ordersCount: 0,
-      });
+      aliasMap.set(a.id, { aliasId: a.id, aliasName: a.alias, holder: a.holder, amount: 0, ordersCount: 0 });
     });
-
     relevantOrders.forEach((o) => {
       if (o.assignedAlias && aliasMap.has(o.assignedAlias.id)) {
         const item = aliasMap.get(o.assignedAlias.id)!;
@@ -474,21 +438,16 @@ class StorageService {
         item.ordersCount += 1;
       }
     });
-
     const revenueByAlias = Array.from(aliasMap.values());
 
-    // Top selling products
     const productStats = new Map<string, { productId: string; productName: string; category: string; quantity: number; revenue: number }>();
     relevantOrders.forEach((o) => {
       o.items.forEach((item) => {
         const pId = item.menuItem.id;
         if (!productStats.has(pId)) {
           productStats.set(pId, {
-            productId: pId,
-            productName: item.menuItem.name,
-            category: item.menuItem.category,
-            quantity: 0,
-            revenue: 0,
+            productId: pId, productName: item.menuItem.name,
+            category: item.menuItem.category, quantity: 0, revenue: 0,
           });
         }
         const stat = productStats.get(pId)!;
@@ -496,18 +455,13 @@ class StorageService {
         stat.revenue += item.itemTotalPrice;
       });
     });
-
     const topSellingProducts = Array.from(productStats.values())
       .sort((a, b) => b.quantity - a.quantity)
       .slice(0, 6);
 
-    // Hourly distribution for daily report
     const hourlyBuckets = new Array(24).fill(0).map((_, hour) => ({
-      hourLabel: `${hour}:00`,
-      revenue: 0,
-      ordersCount: 0,
+      hourLabel: `${hour}:00`, revenue: 0, ordersCount: 0,
     }));
-
     if (timeframe === 'daily') {
       relevantOrders.forEach((o) => {
         const hour = new Date(o.createdAt).getHours();
@@ -518,7 +472,6 @@ class StorageService {
       });
     }
 
-    // Daily distribution for weekly report
     const dailyDistribution: { dayLabel: string; date: string; revenue: number; ordersCount: number }[] = [];
     if (timeframe === 'weekly') {
       const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
@@ -527,7 +480,6 @@ class StorageService {
         targetDate.setDate(targetDate.getDate() - i);
         const dayLabel = dayNames[targetDate.getDay()];
         const dateStr = targetDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
-
         const dayOrders = relevantOrders.filter((o) => {
           const od = new Date(o.createdAt);
           return (
@@ -536,9 +488,7 @@ class StorageService {
             od.getFullYear() === targetDate.getFullYear()
           );
         });
-
         const dayRevenue = dayOrders.reduce((sum, o) => sum + o.total, 0);
-
         dailyDistribution.push({
           dayLabel: `${dayLabel} ${dateStr}`,
           date: dateStr,
@@ -549,45 +499,31 @@ class StorageService {
     }
 
     return {
-      totalRevenue,
-      totalOrders,
-      averageTicket,
-      completedOrdersCount,
-      pendingOrdersCount,
-      canceledOrdersCount,
-      revenueByPaymentMethod,
-      revenueByAlias,
-      topSellingProducts,
-      hourlyDistribution: hourlyBuckets.filter((h, idx) => idx >= 11 && idx <= 23), // Fast food focus 11:00 to 23:00
+      totalRevenue, totalOrders, averageTicket,
+      completedOrdersCount, pendingOrdersCount, canceledOrdersCount,
+      revenueByPaymentMethod, revenueByAlias, topSellingProducts,
+      hourlyDistribution: hourlyBuckets.filter((_, idx) => idx >= 11 && idx <= 23), // foco fast food 11:00-23:00
       dailyDistribution,
     };
   }
 
-  // Generate sample quick demo order for easy testing
+  // Pedido de prueba E2E — queda REAL en la BD (marcado como prueba)
   public generateDemoOrder(): Order {
-    const randomMenu = this.getMenuItems();
-    const item1 = randomMenu[Math.floor(Math.random() * randomMenu.length)];
-    const item2 = randomMenu[Math.floor(Math.random() * randomMenu.length)];
-
+    const menu = this.getMenuItems();
+    if (menu.length < 2) {
+      throw new Error('Cargá el menú real antes de generar pedidos de prueba');
+    }
+    const item1 = menu[Math.floor(Math.random() * menu.length)];
+    const item2 = menu[Math.floor(Math.random() * menu.length)];
     const subtotal = item1.price + item2.price;
     const deliveryFee = 1500;
     const total = subtotal + deliveryFee;
-    const assignedAlias = this.getRandomActiveAlias();
-
-    const sampleCustomers = [
-      { name: 'Lucas Palacios', phone: '+54 9 11 5566-7788', address: 'Av. Santa Fe 2840, Piso 6 C' },
-      { name: 'Micaela Gómez', phone: '+54 9 11 3344-5566', address: 'Gorriti 4920' },
-      { name: 'Facundo Morales', phone: '+54 9 11 8899-0011', address: 'Thames 1630, Depto 1' },
-      { name: 'Camila Rossi', phone: '+54 9 11 2233-4455', address: 'Honduras 5120' },
-    ];
-    const client = sampleCustomers[Math.floor(Math.random() * sampleCustomers.length)];
 
     return this.createOrder({
-      customerName: client.name,
-      customerPhone: client.phone,
-      deliveryMethod: 'delivery',
-      deliveryAddress: client.address,
-      deliveryNotes: 'Tocar timbre, dejar en recepción si no atiende.',
+      customerName: 'CLIENTE DE PRUEBA',
+      customerPhone: '+54 9 342 000-0000',
+      deliveryMethod: 'pickup',
+      deliveryNotes: 'Pedido de prueba E2E — se puede cancelar.',
       items: [
         { id: 'item-demo-1', menuItem: item1, quantity: 1, itemTotalPrice: item1.price },
         { id: 'item-demo-2', menuItem: item2, quantity: 1, itemTotalPrice: item2.price },
@@ -596,10 +532,9 @@ class StorageService {
       deliveryFee,
       total,
       status: 'pendiente_pago',
-      paymentMethod: 'mercadopago_alias',
-      assignedAlias,
+      paymentMethod: 'efectivo',
       estimatedDeliveryMinutes: 30,
-    });
+    } as Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt' | 'timeline'>);
   }
 }
 
