@@ -84,6 +84,29 @@ export interface OrderStatusHistory {
   note: string;
 }
 
+// ── Cuentas de cliente (Google One Tap / registro por teléfono) ──
+export interface CustomerAddress {
+  id: string;
+  label: string;          // 'Casa', 'Trabajo', ...
+  text: string;           // calle y altura
+  floorApt?: string;      // piso/depto
+  isDefault?: boolean;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string;          // nacional normalizado: 342XXXXXXX
+  email?: string;
+  picture?: string;       // avatar de Google
+  googleSub?: string | null;
+  addresses: CustomerAddress[];
+  source?: 'google' | 'telefono';
+  createdAt?: string;
+  lastLoginAt?: string;
+  stats?: { ordersCount: number; totalSpent: number; lastOrderAt: string | null };
+}
+
 export interface Order {
   id: string;
   orderNumber: string; // e.g. #SC-1045
@@ -91,6 +114,7 @@ export interface Order {
   updatedAt: string;
   customerName: string;
   customerPhone: string;
+  customerId?: string | null;
   deliveryMethod: DeliveryMethod;
   deliveryAddress?: string;
   deliveryFloorApt?: string;

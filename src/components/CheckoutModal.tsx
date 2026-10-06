@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CartItem, DeliveryMethod, PaymentMethod, Order } from '../types';
+import React, { useState, useEffect } from 'react';
+import { CartItem, DeliveryMethod, PaymentMethod, Order, Customer } from '../types';
 import { storageService } from '../services/storage';
 import {
   X,
@@ -23,6 +23,8 @@ interface CheckoutModalProps {
   cartItems: CartItem[];
   deliveryMethod: DeliveryMethod;
   onOrderCreated: (order: Order) => void;
+  customer?: Customer | null;
+  onOpenAccount?: () => void;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
@@ -31,6 +33,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   cartItems,
   deliveryMethod: initialDeliveryMethod,
   onOrderCreated,
+  customer,
+  onOpenAccount,
 }) => {
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>(initialDeliveryMethod);
   const [customerName, setCustomerName] = useState('');
@@ -41,6 +45,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('mercadopago_alias');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Cuenta activa → autocompletar nombre, teléfono y dirección predeterminada
+  useEffect(() => {
+    if (!isOpen || !customer) return;
+    setCustomerName(customer.name || '');
+    setCustomerPhone(customer.phone || '');
+    const def = (customer.addresses || []).find((a) => a.isDefault) || customer.addresses?.[0];
+    if (def) {
+      setDeliveryAddress(def.text || '');
+      setDeliveryFloorApt(def.floorApt || '');
+    }
+  }, [isOpen, customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen) return null;
 
@@ -79,6 +95,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       const newOrder = storageService.createOrder({
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
+        customerId: customer?.id || null,
         deliveryMethod,
         deliveryAddress: deliveryMethod === 'delivery' ? deliveryAddress.trim() : undefined,
         deliveryFloorApt: deliveryMethod === 'delivery' ? deliveryFloorApt.trim() : undefined,
@@ -179,6 +196,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Cuenta: autocompletar datos o crear cuenta rápida */}
+          {!customer && onOpenAccount && (
+            <button
+              type="button"
+              onClick={onOpenAccount}
+              className="w-full mb-4 bg-[#243635] hover:bg-[#2c4240] border border-[#e2e663]/40 rounded-2xl px-4 py-3 flex items-center gap-3 text-left transition-all"
+            >
+              <span className="text-xl">🔑</span>
+              <span className="flex-1">
+                <span className="block text-xs font-black text-[#e2e663] font-['Fredoka']">¿Ya tenés cuenta? Entrá con Google o tu celular</span>
+                <span className="block text-[10px] text-[#8daaa8]">Tus datos se completan solos y podés re-pedir en un toque</span>
+              </span>
+              <ArrowRight className="w-4 h-4 text-[#e2e663]" />
+            </button>
+          )}
+          {customer && (
+            <div className="mb-4 bg-[#243635] border border-[#364e4c] rounded-2xl px-4 py-2.5 flex items-center gap-2 text-[11px] text-[#8daaa8]">
+              <span className="text-sm">✅</span> Datos de tu cuenta — podés modificarlos igual
+            </div>
+          )}
 
           {/* Customer Personal Details */}
           <div className="space-y-3">

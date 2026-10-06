@@ -120,9 +120,13 @@ class StorageService {
 
   private async postOrder(order: Order): Promise<void> {
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      // Sesión de cliente (si existe): vincula el pedido a su cuenta → historial + re-pedido
+      const token = typeof window !== 'undefined' ? localStorage.getItem('punto_morfi_token') : null;
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const r = await fetch(`${API}/orders`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ order, clientId: CLIENT_ID }),
       });
       if (!r.ok) console.error('POST orders →', r.status);

@@ -11,7 +11,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { pushNotifications } from '../services/pushNotifications';
-import { Order } from '../types';
+import { Order, Customer } from '../types';
 import { PuntoMorfiLogo } from './Logo';
 
 export type AppViewMode = 'customer' | 'kiosk' | 'kitchen' | 'counter' | 'admin';
@@ -22,6 +22,8 @@ interface HeaderProps {
   cartCount: number;
   cartTotal: number;
   onOpenCart: () => void;
+  onOpenAccount: () => void;
+  customer: Customer | null;
   activeOrder: Order | null;
   onOpenTracking: () => void;
   pendingOrdersCount: number;
@@ -34,6 +36,8 @@ export const Header: React.FC<HeaderProps> = ({
   cartCount,
   cartTotal,
   onOpenCart,
+  onOpenAccount,
+  customer,
   activeOrder,
   onOpenTracking,
   pendingOrdersCount,
@@ -224,6 +228,24 @@ export const Header: React.FC<HeaderProps> = ({
                 <option value="admin">⚙️ Admin / Reportes</option>
               </select>
             </div>
+
+            {/* Cuenta de cliente (perfil, direcciones, historial, re-pedido) */}
+            {currentView === 'customer' && (
+              <button
+                onClick={onOpenAccount}
+                className="p-2.5 rounded-2xl border bg-[#243635] border-[#364e4c] hover:border-[#e2e663]/60 transition-all flex items-center gap-1.5"
+                title={customer ? `Mi cuenta — ${customer.name}` : 'Crear cuenta / iniciar sesión'}
+              >
+                {customer?.picture ? (
+                  <img src={customer.picture} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" />
+                ) : (
+                  <span className="text-base leading-none">{customer ? '👤' : '🔑'}</span>
+                )}
+                <span className="hidden xl:inline text-xs font-bold text-[#e2e663]">
+                  {customer ? customer.name.split(' ')[0] : 'Mi cuenta'}
+                </span>
+              </button>
+            )}
 
             {/* Cart Drawer Trigger */}
             {currentView === 'customer' && (
