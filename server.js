@@ -25,6 +25,9 @@ const pool = new pg.Pool({
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
+// Rutas API en un router: montado en /api Y /pmorfi/api (subdominio + subpath)
+const api = express.Router();
+api.use(express.json({ limit: '2mb' }));
 
 // ── SSE: clientes conectados en tiempo real ────────────────────
 const sseClients = new Set();
@@ -36,7 +39,7 @@ function broadcast(type, payload, origin) {
   }
 }
 
-app.get('/api/events', (req, res) => {
+api.get('/events', (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -50,7 +53,7 @@ app.get('/api/events', (req, res) => {
 });
 
 // ── API ────────────────────────────────────────────────────────
-app.get('/api/bootstrap', async (_req, res) => {
+api.get('/bootstrap', async (_req, res) => {
   try {
     const [menu, orders, aliases] = await Promise.all([
       pool.query('SELECT data FROM pmorfi.menu_items'),
@@ -88,7 +91,7 @@ async function replaceTable(table, rows) {
   }
 }
 
-app.put('/api/menu', async (req, res) => {
+api.put('/menu', async (req, res) => {
   try {
     await replaceTable('menu_items', req.body.items);
     broadcast('menu_updated', req.body.items, req.body.clientId);
@@ -96,7 +99,7 @@ app.put('/api/menu', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.put('/api/aliases', async (req, res) => {
+api.put('/aliases', async (req, res) => {
   try {
     await replaceTable('aliases', req.body.aliases);
     broadcast('alias_updated', req.body.aliases, req.body.clientId);
@@ -104,7 +107,7 @@ app.put('/api/aliases', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/orders', async (req, res) => {
+api.post('/orders', async (req, res) => {
   const o = req.body.order;
   if (!o || !o.id) return res.status(400).json({ error: 'orden inválida' });
   try {
@@ -122,7 +125,7 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-app.put('/api/orders/:id', async (req, res) => {
+api.put('/orders/:id', async (req, res) => {
   const o = req.body.order;
   if (!o) return res.status(400).json({ error: 'orden inválida' });
   try {
@@ -135,7 +138,7 @@ app.put('/api/orders/:id', async (req, res) => {
 });
 
 // bulk (import/export JSON del panel admin)
-app.put('/api/orders', async (req, res) => {
+api.put('/orders', async (req, res) => {
   try {
     const client = await pool.connect();
     try {
@@ -156,7 +159,7 @@ app.put('/api/orders', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/health', async (_req, res) => {
+api.get('/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
     res.json({ ok: true, db: 'up', sse_clients: sseClients.size });
@@ -186,8 +189,16 @@ async function notifyTelegram(o) {
   } catch (e) { console.error('[tg]', e.message); }
 }
 
-// ── Frontend (dist/) — SPA ─────────────────────────────────────
+// ── Montaje dual de la API ─────────────────────────────────────
+app.use('/api', api);
+app.use('/pmorfi/api', api);
+
+// ── Frontend (dist/) — SPA en ruta raíz Y bajo /pmorfi/ ────────
+// (base de Vite = /pmorfi/: el mismo build sirve en
+//  puntomorfi.setubalai.org y demo.setubalai.org/pmorfi/)
 app.use(express.static(path.join(__dirname, 'dist')));
+app.use('/pmorfi', express.static(path.join(__dirname, 'dist')));
+app.get('/', (_req, res) => res.redirect('/pmorfi/'));
 app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'dist', 'index.html')));
 
 app.listen(PORT, '127.0.0.1', () => {
