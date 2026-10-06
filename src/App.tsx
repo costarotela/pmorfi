@@ -16,7 +16,19 @@ import { PrintTicketModal } from './components/admin/PrintTicketModal';
 import { ToastAlert } from './components/ToastAlert';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<AppViewMode>('customer');
+  // Soporte de links compartibles ?view=kitchen|counter|kiosk|admin (parity con AI Studio)
+  const [currentView, _setCurrentView] = useState<AppViewMode>(() => {
+    const param = new URLSearchParams(window.location.search).get('view');
+    const valid: AppViewMode[] = ['customer', 'kiosk', 'kitchen', 'counter', 'admin'];
+    return param && valid.includes(param as AppViewMode) ? (param as AppViewMode) : 'customer';
+  });
+  const setCurrentView = useCallback((v: AppViewMode) => {
+    _setCurrentView(v);
+    const url = new URL(window.location.href);
+    if (v === 'customer') url.searchParams.delete('view');
+    else url.searchParams.set('view', v);
+    window.history.replaceState(null, '', url.toString());
+  }, []);
   const [menuItems, setMenuItems] = useState<MenuItem[]>(() => storageService.getMenuItems());
   const [aliases, setAliases] = useState<MercadoPagoAlias[]>(() => storageService.getAliases());
   const [orders, setOrders] = useState<Order[]>(() => storageService.getOrders());
