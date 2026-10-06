@@ -27,6 +27,13 @@ export interface ProductOptionGroup {
   options: ProductOption[];
 }
 
+export interface Presentacion {
+  id: string;           // 'unidad' | 'docena' | 'media' | custom ('media-docena', ...)
+  label: string;        // 'Unidad', 'Docena (12 u.)', 'Media pizza', ...
+  factor: number;       // multiplicador del precio base (1, 12, 0.5, ...)
+  precioFijo?: number;  // override opcional (ej. precio promo de docena)
+}
+
 export interface MenuItem {
   id: string;
   name: string;
@@ -39,6 +46,7 @@ export interface MenuItem {
   preparationTimeMinutes: number;
   isAvailable: boolean;
   optionGroups?: ProductOptionGroup[];
+  presentaciones?: Presentacion[];
 }
 
 export interface CartItemOptionSelected {

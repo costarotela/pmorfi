@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MenuItem, ProductOption, CartItemOptionSelected } from '../types';
+import { MenuItem, ProductOption, ProductOptionGroup, CartItemOptionSelected } from '../types';
 import { X, Plus, Minus, Check, Clock, Sparkles } from 'lucide-react';
 
 interface ProductModalProps {
@@ -11,16 +11,37 @@ interface ProductModalProps {
 export const ProductModal: React.FC<ProductModalProps> = ({ item, onClose, onAddToCart }) => {
   if (!item) return null;
 
+  // Presentaciones de venta (unidad/docena/media) → grupo de opciones AUTO
+  // generado desde el precio base: el costo se calcula solo (factor o precioFijo).
+  const presentationGroup: ProductOptionGroup | null =
+    item.presentaciones && item.presentaciones.length > 1
+      ? {
+          id: 'presentacion',
+          title: 'Presentación',
+          required: true,
+          options: item.presentaciones.map((p) => {
+            const precio = Math.round(p.precioFijo ?? item.price * p.factor);
+            return {
+              id: p.id,
+              name: `${p.label} — $${precio.toLocaleString('es-AR')}`,
+              priceModifier: precio - item.price,
+            };
+          }),
+        }
+      : null;
+  const allGroups: ProductOptionGroup[] = [
+    ...(presentationGroup ? [presentationGroup] : []),
+    ...(item.optionGroups || []),
+  ];
+
   const [quantity, setQuantity] = useState(1);
   const [selectedOptions, setSelectedOptions] = useState<Record<string, ProductOption>>(() => {
     const initial: Record<string, ProductOption> = {};
-    if (item.optionGroups) {
-      item.optionGroups.forEach((group) => {
-        if (group.required && group.options.length > 0) {
-          initial[group.id] = group.options[0];
-        }
-      });
-    }
+    allGroups.forEach((group) => {
+      if (group.required && group.options.length > 0) {
+        initial[group.id] = group.options[0];
+      }
+    });
     return initial;
   });
   const [specialInstructions, setSpecialInstructions] = useState('');
@@ -43,17 +64,15 @@ export const ProductModal: React.FC<ProductModalProps> = ({ item, onClose, onAdd
 
   const handleConfirm = () => {
     const formattedOptions: CartItemOptionSelected[] = [];
-    if (item.optionGroups) {
-      item.optionGroups.forEach((group) => {
-        if (selectedOptions[group.id]) {
-          formattedOptions.push({
-            groupId: group.id,
-            groupTitle: group.title,
-            selectedOption: selectedOptions[group.id],
-          });
-        }
-      });
-    }
+    allGroups.forEach((group) => {
+      if (selectedOptions[group.id]) {
+        formattedOptions.push({
+          groupId: group.id,
+          groupTitle: group.title,
+          selectedOption: selectedOptions[group.id],
+        });
+      }
+    });
 
     onAddToCart(item, quantity, formattedOptions, specialInstructions);
     onClose();
@@ -105,10 +124,10 @@ export const ProductModal: React.FC<ProductModalProps> = ({ item, onClose, onAdd
             {item.description}
           </p>
 
-          {/* Option Groups */}
-          {item.optionGroups && item.optionGroups.length > 0 && (
+          {/* Option Groups (incluye Presentación auto-generada) */}
+          {allGroups.length > 0 && (
             <div className="space-y-5">
-              {item.optionGroups.map((group) => (
+              {allGroups.map((group) => (
                 <div key={group.id} className="space-y-2.5">
                   <div className="flex items-center justify-between">
                     <h4 className="text-sm font-bold text-stone-100 flex items-center gap-2">

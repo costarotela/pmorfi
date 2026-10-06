@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { MenuItem } from '../../types';
+import { MenuItem, Presentacion } from '../../types';
 import { storageService } from '../../services/storage';
 import {
   Utensils,
@@ -214,6 +214,10 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ items, onItemsUpdated 
   const [formPrepTime, setFormPrepTime] = useState('20');
   const [formIsHomemade, setFormIsHomemade] = useState(true);
   const [formIsPopular, setFormIsPopular] = useState(false);
+  // Presentaciones de venta (unidad base + docena + media)
+  const [formVendeDocena, setFormVendeDocena] = useState(false);
+  const [formPrecioDocena, setFormPrecioDocena] = useState('');
+  const [formVendeMedia, setFormVendeMedia] = useState(false);
 
   // Database Backup Modal
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
@@ -244,6 +248,11 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ items, onItemsUpdated 
     setFormPrepTime(item.preparationTimeMinutes.toString());
     setFormIsHomemade(Boolean(item.isHomemadeSpecial));
     setFormIsPopular(Boolean(item.isPopular));
+    const pres = item.presentaciones || [];
+    const doc = pres.find((p) => p.id === 'docena');
+    setFormVendeDocena(Boolean(doc));
+    setFormPrecioDocena(doc && doc.precioFijo ? doc.precioFijo.toString() : '');
+    setFormVendeMedia(pres.some((p) => p.id === 'media'));
     setIsFormOpen(true);
   };
 
@@ -257,6 +266,20 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ items, onItemsUpdated 
     const priceNum = parseInt(formPrice, 10) || 5000;
     const prepNum = parseInt(formPrepTime, 10) || 20;
 
+    // Presentaciones: unidad (base, siempre) + docena y/o media si se activan.
+    // Precio docena: override manual o 12× base; media: 0.5× base. Todo automático.
+    const presentaciones: Presentacion[] = [{ id: 'unidad', label: 'Unidad', factor: 1 }];
+    if (formVendeDocena) {
+      const pf = parseInt(formPrecioDocena, 10);
+      presentaciones.push({
+        id: 'docena', label: 'Docena (12 u.)', factor: 12,
+        ...(Number.isFinite(pf) && pf > 0 ? { precioFijo: pf } : {}),
+      });
+    }
+    if (formVendeMedia) {
+      presentaciones.push({ id: 'media', label: 'Media porción', factor: 0.5 });
+    }
+
     if (editingDishId) {
       storageService.updateMenuItem(editingDishId, {
         name: formName.trim(),
@@ -267,6 +290,7 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ items, onItemsUpdated 
         preparationTimeMinutes: prepNum,
         isHomemadeSpecial: formIsHomemade,
         isPopular: formIsPopular,
+        presentaciones,
       });
       showToast(`✅ "${formName}" actualizado en la base de datos`);
     } else {
@@ -279,6 +303,7 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ items, onItemsUpdated 
         preparationTimeMinutes: prepNum,
         isHomemadeSpecial: formIsHomemade,
         isPopular: formIsPopular,
+        presentaciones,
         isAvailable: true,
       });
       showToast(`🎉 Nuevo plato "${formName}" agregado al menú`);
@@ -1476,6 +1501,49 @@ export const MenuManager: React.FC<MenuManagerProps> = ({ items, onItemsUpdated 
                   />
                   <label htmlFor="chk-popular" className="text-xs font-bold text-white cursor-pointer">
                     Destacado Popular
+                  </label>
+                </div>
+              </div>
+
+              {/* Presentaciones de venta (unidad / docena / media) */}
+              <div className="bg-[#152221] border border-[#2b3e3d] rounded-2xl p-4 space-y-2.5">
+                <label className="text-xs font-bold text-[#e2e663] block font-['Fredoka']">
+                  Presentaciones de venta
+                  <span className="text-[10px] text-[#8daaa8] font-normal ml-2">
+                    el costo se calcula solo desde el precio base
+                  </span>
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="chk-docena"
+                    checked={formVendeDocena}
+                    onChange={(e) => setFormVendeDocena(e.target.checked)}
+                    className="accent-[#f88d63] w-4 h-4"
+                  />
+                  <label htmlFor="chk-docena" className="text-xs font-bold text-white cursor-pointer">
+                    Docena (12 u.)
+                  </label>
+                  {formVendeDocena && (
+                    <input
+                      type="number"
+                      placeholder={formPrice ? `vacío = 12 × $${(12 * (parseInt(formPrice, 10) || 0)).toLocaleString('es-AR')}` : 'precio docena (opcional)'}
+                      value={formPrecioDocena}
+                      onChange={(e) => setFormPrecioDocena(e.target.value)}
+                      className="w-48 bg-[#1b2827] border border-[#2b3e3d] focus:border-[#f88d63] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"
+                    />
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="chk-media"
+                    checked={formVendeMedia}
+                    onChange={(e) => setFormVendeMedia(e.target.checked)}
+                    className="accent-[#f88d63] w-4 h-4"
+                  />
+                  <label htmlFor="chk-media" className="text-xs font-bold text-white cursor-pointer">
+                    Media porción (½ del precio base — pizza/tarta)
                   </label>
                 </div>
               </div>
