@@ -1,5 +1,6 @@
 import React from 'react';
 import { Order, OrderStatus } from '../types';
+import { LiveTrackingMap } from './delivery/LiveTrackingMap';
 import {
   X,
   Clock,
@@ -134,6 +135,22 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
             </div>
           </div>
 
+          {/* Interactive Live Tracking Map (Uber style) for delivery orders */}
+          {order.deliveryMethod === 'delivery' && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-stone-300 uppercase tracking-wider flex items-center gap-1.5 font-['Fredoka']">
+                  <Bike className="w-4 h-4 text-[#f88d63]" />
+                  <span>Seguimiento del Envío en Tiempo Real (GPS Cadete)</span>
+                </h4>
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold animate-pulse">
+                  En Vivo
+                </span>
+              </div>
+              <LiveTrackingMap order={order} />
+            </div>
+          )}
+
           {/* Stepper Timeline */}
           <div className="space-y-4">
             <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider">
@@ -258,6 +275,13 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                 </div>
               ))}
             </div>
+
+            {order.deliveryNotes && (
+              <div className="bg-[#152221] p-2.5 rounded-xl border border-[#f88d63]/40 text-[11px] space-y-0.5">
+                <span className="font-bold text-[#f88d63] block">📝 Tus observaciones para la cocina:</span>
+                <p className="text-stone-300 italic">&quot;{order.deliveryNotes}&quot;</p>
+              </div>
+            )}
 
             <div className="pt-2 border-t border-stone-800 flex justify-between items-center text-xs font-black text-white">
               <span>Total Abonado / A Abonar:</span>

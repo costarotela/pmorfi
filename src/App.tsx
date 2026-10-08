@@ -16,14 +16,17 @@ import { CounterCashierView } from './components/counter/CounterCashierView';
 import { SelfServiceKiosk } from './components/kiosk/SelfServiceKiosk';
 import { PrintTicketModal } from './components/admin/PrintTicketModal';
 import { ToastAlert } from './components/ToastAlert';
+import { ShareLinksModal } from './components/ShareLinksModal';
 
 export default function App() {
   // Soporte de links compartibles ?view=kitchen|counter|kiosk|admin (parity con AI Studio)
   const [currentView, _setCurrentView] = useState<AppViewMode>(() => {
-    const param = new URLSearchParams(window.location.search).get('view');
+    const params = new URLSearchParams(window.location.search);
+    const param = params.get('view') || params.get('seccion');
     const valid: AppViewMode[] = ['customer', 'kiosk', 'kitchen', 'counter', 'admin'];
     return param && valid.includes(param as AppViewMode) ? (param as AppViewMode) : 'customer';
   });
+  const [isShareLinksOpen, setIsShareLinksOpen] = useState(false);
   const setCurrentView = useCallback((v: AppViewMode) => {
     _setCurrentView(v);
     const url = new URL(window.location.href);
@@ -254,6 +257,7 @@ export default function App() {
         onOpenTracking={() => activeCustomerOrder && setTrackingOrder(activeCustomerOrder)}
         pendingOrdersCount={pendingCount}
         onGenerateDemoOrder={handleGenerateDemoOrder}
+        onOpenShareLinks={() => setIsShareLinksOpen(true)}
       />
 
       {/* View Body */}
@@ -322,6 +326,8 @@ export default function App() {
         cartItems={cart}
         deliveryMethod={deliveryMethod}
         onOrderCreated={handleOrderCreated}
+        onUpdateQuantity={handleUpdateQuantity}
+        onRemoveItem={handleRemoveCartItem}
         customer={customer}
         onOpenAccount={() => { setIsCheckoutOpen(false); setIsAccountOpen(true); }}
       />
@@ -401,9 +407,22 @@ export default function App() {
             >
               Acceso Panel Administrador
             </button>
+            <span>•</span>
+            <button
+              onClick={() => setIsShareLinksOpen(true)}
+              className="text-[#e2e663] hover:underline font-black font-['Fredoka']"
+            >
+              🔗 Compartir Links
+            </button>
           </div>
         </div>
       </footer>
+
+      {/* Share Links Modal */}
+      <ShareLinksModal
+        isOpen={isShareLinksOpen}
+        onClose={() => setIsShareLinksOpen(false)}
+      />
     </div>
   );
 }

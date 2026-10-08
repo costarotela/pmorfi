@@ -23,6 +23,8 @@ type EventType =
   | 'order_updated'
   | 'alias_updated'
   | 'menu_updated'
+  | 'delivery_config_updated'
+  | 'cadetes_updated'
   | 'orders_bulk';
 type StorageEventCallback = (type: EventType, payload: unknown) => void;
 
@@ -48,6 +50,12 @@ class StorageService {
     this.ordersCache = d.orders || [];
     this.aliasCache = d.aliases || [];
     this.ready = true;
+    // Hidratar cadetería: deliveryService escucha este evento (backend real)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pmorfi:delivery', {
+        detail: { config: d.deliveryConfig || null, cadetes: d.cadetes || null },
+      }));
+    }
   }
 
   private connectEvents() {
@@ -87,6 +95,8 @@ class StorageService {
       this.menu = payload as MenuItem[];
     } else if (type === 'alias_updated' && Array.isArray(payload)) {
       this.aliasCache = payload as MercadoPagoAlias[];
+    } else if (type === 'delivery_config_updated' || type === 'cadetes_updated') {
+      void this.refetchBootstrap();
     } else if (type === 'orders_bulk') {
       void this.refetchBootstrap();
     }

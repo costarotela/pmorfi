@@ -60,20 +60,48 @@ api.get('/events', (req, res) => {
 // ── API ────────────────────────────────────────────────────────
 api.get('/bootstrap', async (_req, res) => {
   try {
-    const [menu, orders, aliases] = await Promise.all([
+    const [menu, orders, aliases, kv] = await Promise.all([
       pool.query('SELECT data FROM pmorfi.menu_items'),
       pool.query('SELECT data FROM pmorfi.orders ORDER BY created_at DESC'),
       pool.query('SELECT data FROM pmorfi.aliases'),
+      pool.query(`SELECT key, data FROM pmorfi.kv_store WHERE key IN ('delivery_config','cadetes')`),
     ]);
+    const kvMap = Object.fromEntries(kv.rows.map((r) => [r.key, r.data]));
     res.json({
       menu: menu.rows.map((r) => r.data),
       orders: orders.rows.map((r) => r.data),
       aliases: aliases.rows.map((r) => r.data),
+      deliveryConfig: kvMap.delivery_config || null,
+      cadetes: kvMap.cadetes || null,
     });
   } catch (e) {
     console.error('bootstrap', e.message);
     res.status(500).json({ error: e.message });
   }
+});
+
+// ── Cadetería: zonas/turnos (delivery_config) y plantilla (cadetes) en kv_store ──
+async function kvPut(key, data) {
+  await pool.query(
+    `INSERT INTO pmorfi.kv_store (key, data) VALUES ($1, $2)
+     ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
+    [key, JSON.stringify(data)]);
+}
+
+api.put('/delivery/config', async (req, res) => {
+  try {
+    await kvPut('delivery_config', req.body.config);
+    broadcast('delivery_config_updated', req.body.config, req.body.clientId);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+api.put('/delivery/cadetes', async (req, res) => {
+  try {
+    await kvPut('cadetes', req.body.cadetes);
+    broadcast('cadetes_updated', req.body.cadetes, req.body.clientId);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 async function replaceTable(table, rows) {

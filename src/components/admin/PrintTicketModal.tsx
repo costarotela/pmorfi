@@ -112,6 +112,14 @@ export const PrintTicketModal: React.FC<PrintTicketModalProps> = ({ order, onClo
               ))}
             </div>
 
+            {/* General Customer Notes & Observations */}
+            {order.deliveryNotes && (
+              <div className="py-2.5 px-2 bg-amber-100 border border-amber-600 rounded my-2 text-[10px] space-y-0.5">
+                <div className="font-extrabold text-black">*** ACLARACIÓN / OBSERVACIÓN DEL CLIENTE ***</div>
+                <div className="font-bold text-gray-900">&quot;{order.deliveryNotes}&quot;</div>
+              </div>
+            )}
+
             {/* Totals */}
             <div className="py-3 border-b border-dashed border-gray-400 space-y-1 text-[11px]">
               <div className="flex justify-between">

@@ -83,8 +83,8 @@ export const generateKitchenTicketPDF = (order: Order, type: 'cocina' | 'cliente
   }
 
   if (order.deliveryNotes) {
-    doc.setFont('helvetica', 'italic');
-    doc.text(`NOTA: ${order.deliveryNotes}`, 5, y);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`*** OBS CLIENTE: ${order.deliveryNotes.toUpperCase()} ***`, 5, y);
     y += 5;
   }
 
