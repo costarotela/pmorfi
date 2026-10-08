@@ -59,32 +59,58 @@ export const INITIAL_MENU_ITEMS: MenuItem[] = [
   // Empanadas
   {
     id: 'emp-1',
-    name: 'Empanadas Tucumanas de Carne a Cuchillo (Docena)',
-    description: 'Carne de primera cortada a cuchillo, cebolla de verdeo, huevo picado, comino y pimentón dulce. Masa casera hojaldrada, servidas con gajos de limón.',
-    price: 13500,
+    name: 'Empanadas Caseras Norteñas (Por Unidad, 1/2 Docena o Docena)',
+    description: 'Masa casera hojaldrada con grasa fina o al horno. Podés pedir por docena, media docena o unidad, eligiendo las variedades que quieras.',
+    price: 16800,
     category: 'empanadas',
-    image: 'https://images.unsplash.com/photo-1628837775685-61266b0ca881?auto=format&fit=crop&w=700&q=80',
+    image: 'https://images.unsplash.com/photo-1628840042765-356cda07504e?auto=format&fit=crop&w=700&q=80',
     isPopular: true,
     isHomemadeSpecial: true,
     preparationTimeMinutes: 20,
     isAvailable: true,
     optionGroups: [
       {
-        id: 'coccion-emp',
-        title: 'Tipo de cocción',
+        id: 'tamano-emp',
+        title: 'Presentación & Cantidad',
         required: true,
         options: [
-          { id: 'horno', name: 'Al horno de barro' },
-          { id: 'fritas', name: 'Fritas bien doradas en grasa casera' },
+          { id: 'docena', name: '1 Docena (12 unidades surtidas)', priceModifier: 0 },
+          { id: 'media-docena', name: '1/2 Docena (6 unidades)', priceModifier: -7900 },
+          { id: 'unidad', name: 'Por Unidad (1 empanada)', priceModifier: -15200 },
+        ],
+      },
+      {
+        id: 'gustos-emp',
+        title: 'Variedad Principal / Gustos',
+        required: true,
+        options: [
+          { id: 'surtidas', name: 'Surtidas de la casa (Carne, J&Q, Humita, Pollo)' },
+          { id: 'carne-cuchillo', name: 'Carne cortada a cuchillo picante' },
+          { id: 'carne-suave', name: 'Carne suave criolla tradicional' },
+          { id: 'jamon-queso', name: 'Jamón cocido y queso muzzarella' },
+          { id: 'humita', name: 'Humita norteña con queso cremoso' },
+          { id: 'verdura', name: 'Verdura / Acelga con salsa blanca' },
+          { id: 'choclo', name: 'Choclo dulce con queso fundido' },
+          { id: 'pollo', name: 'Pollo al verdeo con puerro' },
+          { id: 'pescado', name: 'Pescado / Atún a la gallega' },
+        ],
+      },
+      {
+        id: 'coccion-emp',
+        title: 'Tipo de Cocción',
+        required: true,
+        options: [
+          { id: 'horno', name: 'Al horno de barro bien doradas' },
+          { id: 'fritas', name: 'Fritas criollas bien crocantes' },
         ],
       },
     ],
   },
   {
     id: 'emp-2',
-    name: 'Empanadas de Jamón y Queso Cremoso (Media Docena)',
+    name: 'Empanadas de Jamón y Queso Cremoso',
     description: 'Abundante queso mozzarella fundido, jamón cocido seleccionado y toque de orégano en masa artesanal.',
-    price: 7200,
+    price: 16800,
     category: 'empanadas',
     image: 'https://images.unsplash.com/photo-1541544741938-0af808871cc0?auto=format&fit=crop&w=700&q=80',
     isPopular: false,
@@ -92,6 +118,16 @@ export const INITIAL_MENU_ITEMS: MenuItem[] = [
     preparationTimeMinutes: 15,
     isAvailable: true,
     optionGroups: [
+      {
+        id: 'tamano-jq',
+        title: 'Cantidad',
+        required: true,
+        options: [
+          { id: 'docena-jq', name: '1 Docena (12 unidades)', priceModifier: 0 },
+          { id: 'media-jq', name: '1/2 Docena (6 unidades)', priceModifier: -7900 },
+          { id: 'unidad-jq', name: 'Por Unidad (1 empanada)', priceModifier: -15200 },
+        ],
+      },
       {
         id: 'coccion-jq',
         title: 'Cocción',
@@ -209,6 +245,27 @@ export const INITIAL_MENU_ITEMS: MenuItem[] = [
     isHomemadeSpecial: true,
     preparationTimeMinutes: 25,
     isAvailable: true,
+    optionGroups: [
+      {
+        id: 'tamano-piz-1',
+        title: 'Tamaño & Porciones',
+        required: true,
+        options: [
+          { id: 'grande-piz-1', name: '1 Pizza Grande (8 porciones)', priceModifier: 0 },
+          { id: 'media-piz-1', name: '1/2 Pizza Grande (4 porciones)', priceModifier: -6000 },
+          { id: 'chica-piz-1', name: 'Pizza Chica / Individual (2 porciones)', priceModifier: -8500 },
+        ],
+      },
+      {
+        id: 'extra-piz-1',
+        title: 'Borde & Agregados',
+        required: false,
+        options: [
+          { id: 'borde-queso', name: 'Borde relleno de muzzarella', priceModifier: 2200 },
+          { id: 'cebolla-extra', name: 'Doble cebolla caramelizada', priceModifier: 900 },
+        ],
+      },
+    ],
   },
   {
     id: 'piz-2',
@@ -221,6 +278,27 @@ export const INITIAL_MENU_ITEMS: MenuItem[] = [
     isHomemadeSpecial: false,
     preparationTimeMinutes: 22,
     isAvailable: true,
+    optionGroups: [
+      {
+        id: 'tamano-piz-2',
+        title: 'Tamaño & Porciones',
+        required: true,
+        options: [
+          { id: 'grande-piz-2', name: '1 Pizza Grande (8 porciones)', priceModifier: 0 },
+          { id: 'media-piz-2', name: '1/2 Pizza Grande (4 porciones)', priceModifier: -5000 },
+          { id: 'chica-piz-2', name: 'Pizza Chica (2 porciones)', priceModifier: -7000 },
+        ],
+      },
+      {
+        id: 'sabor-piz-2',
+        title: 'Variedad de la Muzzarella',
+        required: false,
+        options: [
+          { id: 'doble-muzza', name: 'Doble muzzarella gratinada', priceModifier: 2000 },
+          { id: 'mitad-fuga', name: 'Mitad Especial / Mitad Fugazzeta', priceModifier: 1200 },
+        ],
+      },
+    ],
   },
 
   // Lomitos
@@ -235,20 +313,53 @@ export const INITIAL_MENU_ITEMS: MenuItem[] = [
     isHomemadeSpecial: true,
     preparationTimeMinutes: 22,
     isAvailable: true,
+    optionGroups: [
+      {
+        id: 'tamano-lomito',
+        title: 'Tamaño',
+        required: true,
+        options: [
+          { id: 'lom-grande', name: 'Lomito Completo Grande (Baguette 30cm)', priceModifier: 0 },
+          { id: 'lom-doble', name: 'Lomito Doble Carne para compartir', priceModifier: 4000 },
+        ],
+      },
+    ],
   },
 
   // Minutas
   {
     id: 'min-1',
-    name: 'Papas Rústicas con Cheddar y Panceta Crocante',
-    description: 'Papas cortadas a mano con piel, fritas al momento, bañadas en queso cheddar fundido cremoso y trozos de panceta crocante con lluvia de verdeo fresco.',
-    price: 6800,
+    name: 'Papas Fritas Rústicas Punto Morfi (Cheddar & Panceta)',
+    description: 'Papas cortadas a mano con piel, fritas al momento, servidas en porciones generosas.',
+    price: 7500,
     category: 'minutas',
     image: 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?auto=format&fit=crop&w=700&q=80',
     isPopular: true,
     isHomemadeSpecial: true,
     preparationTimeMinutes: 15,
     isAvailable: true,
+    optionGroups: [
+      {
+        id: 'porcion-papas',
+        title: 'Tamaño de Porción',
+        required: true,
+        options: [
+          { id: 'papas-grande', name: 'Porción Grande (Para 3 o 4 personas)', priceModifier: 0 },
+          { id: 'papas-mediana', name: 'Porción Mediana (Para 2 personas)', priceModifier: -2300 },
+          { id: 'papas-chica', name: 'Porción Individual (1 persona)', priceModifier: -4000 },
+        ],
+      },
+      {
+        id: 'toppings-papas',
+        title: 'Bañadas o Clásicas',
+        required: true,
+        options: [
+          { id: 'con-cheddar-panceta', name: 'Bañadas en cheddar fundido & panceta crocante', priceModifier: 0 },
+          { id: 'a-caballo-papas', name: 'Con 2 huevos fritos a caballo', priceModifier: -400 },
+          { id: 'clasicas-solas', name: 'Clásicas solas con sal marina', priceModifier: -1200 },
+        ],
+      },
+    ],
   },
   {
     id: 'min-2',

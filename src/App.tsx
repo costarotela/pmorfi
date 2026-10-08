@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { MenuItem, CartItem, Order, DeliveryMethod, MercadoPagoAlias, CartItemOptionSelected, Customer } from './types';
+import { MenuItem, CartItem, Order, DeliveryMethod, MercadoPagoAlias, CartItemOptionSelected } from './types';
 import { storageService } from './services/storage';
-import { authService } from './services/auth';
 import { Header, AppViewMode } from './components/Header';
 import { CustomerMenu } from './components/CustomerMenu';
 import { ProductModal } from './components/ProductModal';
 import { CartDrawer } from './components/CartDrawer';
 import { CheckoutModal } from './components/CheckoutModal';
-import { AccountModal } from './components/AccountModal';
 import { MercadoPagoPaymentView } from './components/MercadoPagoPaymentView';
 import { OrderTrackingModal } from './components/OrderTrackingModal';
 import { AdminDashboard } from './components/admin/AdminDashboard';
@@ -16,21 +14,26 @@ import { CounterCashierView } from './components/counter/CounterCashierView';
 import { SelfServiceKiosk } from './components/kiosk/SelfServiceKiosk';
 import { PrintTicketModal } from './components/admin/PrintTicketModal';
 import { ToastAlert } from './components/ToastAlert';
+import { ShareLinksModal } from './components/ShareLinksModal';
+
+const getInitialView = (): AppViewMode => {
+  if (typeof window === 'undefined') return 'customer';
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get('view') || params.get('seccion');
+    if (v === 'admin' || v === 'panel') return 'admin';
+    if (v === 'kitchen' || v === 'cocina' || v === 'comandas') return 'kitchen';
+    if (v === 'counter' || v === 'caja' || v === 'mostrador') return 'counter';
+    if (v === 'kiosk' || v === 'totem' || v === 'tablet') return 'kiosk';
+  } catch {
+    // fallback
+  }
+  return 'customer';
+};
 
 export default function App() {
-  // Soporte de links compartibles ?view=kitchen|counter|kiosk|admin (parity con AI Studio)
-  const [currentView, _setCurrentView] = useState<AppViewMode>(() => {
-    const param = new URLSearchParams(window.location.search).get('view');
-    const valid: AppViewMode[] = ['customer', 'kiosk', 'kitchen', 'counter', 'admin'];
-    return param && valid.includes(param as AppViewMode) ? (param as AppViewMode) : 'customer';
-  });
-  const setCurrentView = useCallback((v: AppViewMode) => {
-    _setCurrentView(v);
-    const url = new URL(window.location.href);
-    if (v === 'customer') url.searchParams.delete('view');
-    else url.searchParams.set('view', v);
-    window.history.replaceState(null, '', url.toString());
-  }, []);
+  const [currentView, setCurrentView] = useState<AppViewMode>(getInitialView);
+  const [isShareLinksOpen, setIsShareLinksOpen] = useState(false);
   const [menuItems, setMenuItems] = useState<MenuItem[]>(() => storageService.getMenuItems());
   const [aliases, setAliases] = useState<MercadoPagoAlias[]>(() => storageService.getAliases());
   const [orders, setOrders] = useState<Order[]>(() => storageService.getOrders());
@@ -55,16 +58,6 @@ export default function App() {
   const [paymentViewOrder, setPaymentViewOrder] = useState<Order | null>(null);
   const [trackingOrder, setTrackingOrder] = useState<Order | null>(null);
   const [printModalOrder, setPrintModalOrder] = useState<Order | null>(null);
-
-  // ── Cuenta de cliente (Google One Tap / teléfono) ────────────
-  const [customer, setCustomer] = useState<Customer | null>(null);
-  const [isAccountOpen, setIsAccountOpen] = useState(false);
-
-  // Restaurar sesión guardada al arrancar (solo en vista cliente)
-  useEffect(() => {
-    if (currentView !== 'customer') return;
-    authService.restore().then((c) => { if (c) setCustomer(c); });
-  }, [currentView]);
 
   // Sync cart to local storage
   useEffect(() => {
@@ -104,6 +97,21 @@ export default function App() {
   // Get active order for customer
   const activeCustomerOrderId = storageService.getActiveCustomerOrderId();
   const activeCustomerOrder = orders.find((o) => o.id === activeCustomerOrderId) || null;
+
+  // View switcher with URL sync
+  const handleViewChange = (newView: AppViewMode) => {
+    setCurrentView(newView);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (newView === 'customer') {
+        url.searchParams.delete('view');
+        url.searchParams.delete('seccion');
+      } else {
+        url.searchParams.set('view', newView);
+      }
+      window.history.replaceState({}, '', url.toString());
+    }
+  };
 
   // Cart operations
   const handleAddToCart = (
@@ -183,37 +191,6 @@ export default function App() {
     reloadData();
   };
 
-  // "Pedir lo mismo de la vez pasada": re-arma el carrito desde un pedido
-  // histórico, usando el menú actual (avisa si algún ítem ya no existe).
-  const handleReorder = (order: Order) => {
-    const menu = storageService.getMenuItems();
-    const newItems: CartItem[] = [];
-    let skipped = 0;
-    for (const it of order.items || []) {
-      const current = menu.find((m) => m.id === it.menuItem?.id && m.isAvailable);
-      if (!current) { skipped++; continue; }
-      let unitPrice = current.price;
-      (it.selectedOptions || []).forEach((opt) => {
-        if (opt.selectedOption.priceModifier) unitPrice += opt.selectedOption.priceModifier;
-      });
-      newItems.push({
-        id: 'cart-item-' + Date.now() + Math.random().toString(36).substring(2, 6),
-        menuItem: current,
-        quantity: it.quantity,
-        selectedOptions: it.selectedOptions || [],
-        specialInstructions: it.specialInstructions || '',
-        itemTotalPrice: unitPrice * it.quantity,
-      });
-    }
-    if (newItems.length === 0) {
-      alert('Los productos de ese pedido ya no están disponibles en el menú.');
-      return;
-    }
-    setCart((prev) => [...prev, ...newItems]);
-    setIsCartOpen(true);
-    if (skipped > 0) alert(`Agregamos tu pedido. ${skipped} producto(s) ya no están disponibles y se omitieron.`);
-  };
-
   const cartCount = cart.reduce((acc, it) => acc + it.quantity, 0);
   const cartTotal = cart.reduce((acc, it) => acc + it.itemTotalPrice, 0);
   const pendingCount = orders.filter(
@@ -226,7 +203,7 @@ export default function App() {
       <SelfServiceKiosk
         menuItems={menuItems}
         onOrderCreated={handleOrderCreated}
-        onExitKiosk={() => setCurrentView('customer')}
+        onExitKiosk={() => handleViewChange('customer')}
       />
     );
   }
@@ -244,16 +221,15 @@ export default function App() {
       {/* Main App Navigation Header */}
       <Header
         currentView={currentView}
-        onChangeView={setCurrentView}
+        onChangeView={handleViewChange}
         cartCount={cartCount}
         cartTotal={cartTotal}
         onOpenCart={() => setIsCartOpen(true)}
-        onOpenAccount={() => setIsAccountOpen(true)}
-        customer={customer}
         activeOrder={activeCustomerOrder}
         onOpenTracking={() => activeCustomerOrder && setTrackingOrder(activeCustomerOrder)}
         pendingOrdersCount={pendingCount}
         onGenerateDemoOrder={handleGenerateDemoOrder}
+        onOpenShareLinks={() => setIsShareLinksOpen(true)}
       />
 
       {/* View Body */}
@@ -322,17 +298,8 @@ export default function App() {
         cartItems={cart}
         deliveryMethod={deliveryMethod}
         onOrderCreated={handleOrderCreated}
-        customer={customer}
-        onOpenAccount={() => { setIsCheckoutOpen(false); setIsAccountOpen(true); }}
-      />
-
-      {/* Cuenta de cliente: login, perfil, direcciones, historial y re-pedido */}
-      <AccountModal
-        isOpen={isAccountOpen}
-        onClose={() => setIsAccountOpen(false)}
-        customer={customer}
-        onCustomerChange={setCustomer}
-        onReorder={handleReorder}
+        onUpdateQuantity={handleUpdateQuantity}
+        onRemoveItem={handleRemoveCartItem}
       />
 
       {paymentViewOrder && (
@@ -375,35 +342,48 @@ export default function App() {
           </div>
           <div className="flex items-center gap-4 text-[#8daaa8] flex-wrap justify-center">
             <button
-              onClick={() => setCurrentView('kiosk')}
+              onClick={() => handleViewChange('kiosk')}
               className="text-[#e2e663] hover:underline font-bold"
             >
               📱 Modo Tótem Tablet
             </button>
             <span>•</span>
             <button
-              onClick={() => setCurrentView('kitchen')}
+              onClick={() => handleViewChange('kitchen')}
               className="text-[#759694] hover:underline font-bold"
             >
               🍳 Cocina KDS
             </button>
             <span>•</span>
             <button
-              onClick={() => setCurrentView('counter')}
+              onClick={() => handleViewChange('counter')}
               className="text-[#f88d63] hover:underline font-bold"
             >
               💵 Caja / Despacho
             </button>
             <span>•</span>
             <button
-              onClick={() => setCurrentView('admin')}
+              onClick={() => handleViewChange('admin')}
               className="text-white hover:underline font-black font-['Fredoka']"
             >
-              Acceso Panel Administrador
+              ⚙️ Acceso Panel Administrador
+            </button>
+            <span>•</span>
+            <button
+              onClick={() => setIsShareLinksOpen(true)}
+              className="text-[#e2e663] hover:underline font-black font-['Fredoka']"
+            >
+              🔗 Compartir Links
             </button>
           </div>
         </div>
       </footer>
+
+      {/* Share Links Modal */}
+      <ShareLinksModal
+        isOpen={isShareLinksOpen}
+        onClose={() => setIsShareLinksOpen(false)}
+      />
     </div>
   );
 }

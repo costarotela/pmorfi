@@ -4,17 +4,17 @@ import { OrdersKanban } from './OrdersKanban';
 import { MercadoPagoManager } from './MercadoPagoManager';
 import { SalesReports } from './SalesReports';
 import { MenuManager } from './MenuManager';
-import { CustomersManager } from './CustomersManager';
+import { DeliveryManager } from './DeliveryManager';
 import {
   ChefHat,
   Shuffle,
   BarChart3,
   Utensils,
+  Bike,
   Bell,
   Clock,
   Sparkles,
   ArrowLeft,
-  Users,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -28,7 +28,7 @@ interface AdminDashboardProps {
   onBackToCustomer: () => void;
 }
 
-type AdminTab = 'orders' | 'mercadopago' | 'reports' | 'menu' | 'clientes';
+type AdminTab = 'orders' | 'mercadopago' | 'reports' | 'menu' | 'delivery';
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   orders,
@@ -129,15 +129,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab('clientes')}
+            onClick={() => setActiveTab('delivery')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap transition-all ${
-              activeTab === 'clientes'
-                ? 'bg-[#e2e663] text-stone-950 shadow-md font-black'
+              activeTab === 'delivery'
+                ? 'bg-[#f88d63] text-[#1b2827] shadow-md font-black'
                 : 'text-stone-400 hover:text-white'
             }`}
           >
-            <Users className="w-4 h-4" />
-            <span>Clientes</span>
+            <Bike className="w-4 h-4" />
+            <span>Zonas & Envíos</span>
           </button>
         </div>
       </div>
@@ -167,7 +167,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         />
       )}
 
-      {activeTab === 'clientes' && <CustomersManager />}
+      {activeTab === 'delivery' && <DeliveryManager />}
     </div>
   );
 };

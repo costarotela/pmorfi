@@ -227,34 +227,27 @@ export const CustomerMenu: React.FC<CustomerMenuProps> = ({
               </div>
 
               {/* Price & Action */}
-              <div className="px-5 pb-5 pt-2 flex items-center justify-between border-t border-[#2d4240]">
+              <div className="px-5 pb-5 pt-3 flex items-center justify-between border-t border-[#2d4240]">
                 <div>
-                  <span className="text-[11px] text-[#759694] block font-semibold">Precio</span>
-                  <span className="text-xl font-black text-[#e2e663] font-['Fredoka']">
-                    ${item.price.toLocaleString('es-AR')}
+                  <span className="text-[10px] text-[#8daaa8] uppercase font-bold block">
+                    {item.optionGroups && item.optionGroups.length > 0 ? 'Precio desde' : 'Valor unitario'}
                   </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xl font-black text-[#e2e663] font-['Fredoka']">
+                      ${item.price.toLocaleString('es-AR')}
+                    </span>
+                    <span className="text-[10px] text-[#759694]">/ unid.</span>
+                  </div>
                 </div>
 
                 {item.isAvailable && (
-                  <div className="flex items-center gap-2">
-                    {item.optionGroups && item.optionGroups.length > 0 ? (
-                      <button
-                        onClick={() => onSelectItem(item)}
-                        className="bg-[#243635] hover:bg-[#2c4241] text-[#f88d63] text-xs font-black px-4 py-2.5 rounded-xl border border-[#f88d63]/40 transition-all flex items-center gap-1.5 font-['Fredoka']"
-                      >
-                        Personalizar
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => onQuickAdd(item)}
-                        className="bg-gradient-to-r from-[#f88d63] to-[#fa9d79] hover:from-[#f77e50] hover:to-[#f88d63] text-[#1b2827] font-black text-xs px-3.5 py-2.5 rounded-xl shadow-md shadow-[#f88d63]/25 transition-all flex items-center gap-1.5 active:scale-95 font-['Fredoka']"
-                        title="Agregar directamente"
-                      >
-                        <Plus className="w-4 h-4 stroke-[3]" />
-                        <span>Agregar</span>
-                      </button>
-                    )}
-                  </div>
+                  <button
+                    onClick={() => onSelectItem(item)}
+                    className="bg-gradient-to-r from-[#f88d63] to-[#fa9d79] hover:from-[#f77e50] hover:to-[#f88d63] text-[#1b2827] font-black text-xs px-4 py-2.5 rounded-2xl shadow-md shadow-[#f88d63]/25 transition-all flex items-center gap-1.5 active:scale-95 font-['Fredoka']"
+                  >
+                    <Plus className="w-4 h-4 stroke-[3]" />
+                    <span>{item.optionGroups && item.optionGroups.length > 0 ? 'Elegir & Cantidad' : 'Pedir'}</span>
+                  </button>
                 )}
               </div>
             </div>

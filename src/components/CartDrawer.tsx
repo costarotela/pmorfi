@@ -1,5 +1,6 @@
 import React from 'react';
 import { CartItem, DeliveryMethod } from '../types';
+import { deliveryService } from '../services/deliveryService';
 import { X, Trash2, Plus, Minus, ShoppingBag, Bike, Store, ArrowRight } from 'lucide-react';
 
 interface CartDrawerProps {
@@ -26,7 +27,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   if (!isOpen) return null;
 
   const subtotal = cartItems.reduce((acc, item) => acc + item.itemTotalPrice, 0);
-  const deliveryFee = deliveryMethod === 'delivery' && subtotal > 0 ? 1500 : 0;
+  const baseDeliveryFee = deliveryService.getConfig().zones[0]?.deliveryFee || 1200;
+  const deliveryFee = deliveryMethod === 'delivery' && subtotal > 0 ? baseDeliveryFee : 0;
   const total = subtotal + deliveryFee;
 
   return (

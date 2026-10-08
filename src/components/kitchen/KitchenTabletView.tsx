@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Maximize2,
   Sparkles,
+  AlertCircle,
 } from 'lucide-react';
 
 interface KitchenTabletViewProps {
@@ -259,10 +260,16 @@ export const KitchenTabletView: React.FC<KitchenTabletViewProps> = ({
                     ))}
                   </div>
 
-                  {/* General Delivery Note if any */}
+                  {/* General Delivery Note / Customer Observations */}
                   {order.deliveryNotes && (
-                    <div className="text-xs text-[#8daaa8] italic pb-2">
-                      Nota cliente: &quot;{order.deliveryNotes}&quot;
+                    <div className="bg-[#f88d63]/25 border-2 border-[#f88d63] p-3 rounded-2xl text-xs space-y-1 mb-2 shadow-md">
+                      <div className="flex items-center gap-1.5 text-[#f88d63] font-black font-['Fredoka'] uppercase tracking-wider text-[11px]">
+                        <AlertCircle className="w-4 h-4 text-[#f88d63] shrink-0" />
+                        <span>⚠️ ACLARACIÓN & OBSERVACIÓN DEL CLIENTE:</span>
+                      </div>
+                      <p className="text-white font-bold text-xs pl-5 leading-relaxed bg-[#14201f]/80 p-2 rounded-xl">
+                        &quot;{order.deliveryNotes}&quot;
+                      </p>
                     </div>
                   )}
                 </div>

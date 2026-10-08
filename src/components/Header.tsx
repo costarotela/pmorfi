@@ -9,9 +9,11 @@ import {
   Sparkles,
   MapPin,
   ChevronRight,
+  Share2,
 } from 'lucide-react';
 import { pushNotifications } from '../services/pushNotifications';
-import { Order, Customer } from '../types';
+import { deliveryService } from '../services/deliveryService';
+import { Order } from '../types';
 import { PuntoMorfiLogo } from './Logo';
 
 export type AppViewMode = 'customer' | 'kiosk' | 'kitchen' | 'counter' | 'admin';
@@ -22,12 +24,11 @@ interface HeaderProps {
   cartCount: number;
   cartTotal: number;
   onOpenCart: () => void;
-  onOpenAccount: () => void;
-  customer: Customer | null;
   activeOrder: Order | null;
   onOpenTracking: () => void;
   pendingOrdersCount: number;
   onGenerateDemoOrder: () => void;
+  onOpenShareLinks: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -36,12 +37,11 @@ export const Header: React.FC<HeaderProps> = ({
   cartCount,
   cartTotal,
   onOpenCart,
-  onOpenAccount,
-  customer,
   activeOrder,
   onOpenTracking,
   pendingOrdersCount,
   onGenerateDemoOrder,
+  onOpenShareLinks,
 }) => {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
 
@@ -77,18 +77,35 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
+  const schedule = deliveryService.checkStoreSchedule();
+
   return (
     <header className="sticky top-0 z-40 bg-[#1e2d2c]/95 backdrop-blur-xl border-b border-[#2e4342]">
       {/* Top Banner Notice with Punto Morfi Teal, Coral & Yellow palette */}
       <div className="bg-gradient-to-r from-[#759694] via-[#f88d63] to-[#e2e663] text-[#1b2827] text-xs py-1.5 px-4 font-bold flex items-center justify-between">
         <div className="flex items-center gap-2 mx-auto sm:mx-0">
           <Sparkles className="w-3.5 h-3.5 text-[#1b2827]" />
-          <span>Punto Morfi • Casa de Comidas Caseras • Cobro con Mercado Pago (Alias al azar)</span>
+          <span>Punto Morfi • Comidas Caseras • Cobro Mercado Pago</span>
         </div>
         <div className="hidden sm:flex items-center gap-3 text-[#1b2827] font-bold text-[11px]">
-          <span className="flex items-center gap-1">
-            <Clock className="w-3 h-3" /> Cocina abierta Lun a Dom 11:30 - 15:30 / 19:30 - 00:30
+          <span className="flex items-center gap-1.5 bg-[#1b2827]/10 px-2 py-0.5 rounded-md">
+            <Clock className="w-3 h-3" />
+            <span>
+              {schedule.canAcceptOrders
+                ? schedule.statusTag === 'por_cerrar'
+                  ? `⚡ ¡Últimos ${schedule.minutesUntilCutoff} min! (Tope: ${schedule.currentShift?.cutoffTime} hs)`
+                  : `Cocina abierta (Pedidos hasta las ${schedule.currentShift?.cutoffTime} hs)`
+                : `Cocina cerrada (Abre a las ${schedule.nextShift?.openTime || '11:30'} hs)`}
+            </span>
           </span>
+          <span className="opacity-50">|</span>
+          <button
+            onClick={onOpenShareLinks}
+            className="hover:underline flex items-center gap-1 font-black text-[#1b2827] bg-[#1b2827]/10 hover:bg-[#1b2827]/20 px-2.5 py-0.5 rounded-md transition-colors"
+            title="Copiar enlaces de la web de clientes o del panel interno para compartir"
+          >
+            <Share2 className="w-3 h-3" /> Compartir Links
+          </button>
           <span className="opacity-50">|</span>
           <button
             onClick={onGenerateDemoOrder}
@@ -177,6 +194,16 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right Action Icons */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Share Links Button */}
+            <button
+              onClick={onOpenShareLinks}
+              className="bg-[#243635] hover:bg-[#2c4241] border border-[#e2e663]/40 text-[#e2e663] px-3 py-2 rounded-2xl text-xs font-black flex items-center gap-1.5 transition-all font-['Fredoka'] shadow-sm"
+              title="Copiar links para compartir (Web de clientes y Panel interno)"
+            >
+              <Share2 className="w-3.5 h-3.5 text-[#e2e663]" />
+              <span className="hidden md:inline">Compartir Links</span>
+            </button>
+
             {/* Push Notifications Opt-In */}
             <button
               onClick={handleRequestNotifications}
@@ -228,24 +255,6 @@ export const Header: React.FC<HeaderProps> = ({
                 <option value="admin">⚙️ Admin / Reportes</option>
               </select>
             </div>
-
-            {/* Cuenta de cliente (perfil, direcciones, historial, re-pedido) */}
-            {currentView === 'customer' && (
-              <button
-                onClick={onOpenAccount}
-                className="p-2.5 rounded-2xl border bg-[#243635] border-[#364e4c] hover:border-[#e2e663]/60 transition-all flex items-center gap-1.5"
-                title={customer ? `Mi cuenta — ${customer.name}` : 'Crear cuenta / iniciar sesión'}
-              >
-                {customer?.picture ? (
-                  <img src={customer.picture} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" />
-                ) : (
-                  <span className="text-base leading-none">{customer ? '👤' : '🔑'}</span>
-                )}
-                <span className="hidden xl:inline text-xs font-bold text-[#e2e663]">
-                  {customer ? customer.name.split(' ')[0] : 'Mi cuenta'}
-                </span>
-              </button>
-            )}
 
             {/* Cart Drawer Trigger */}
             {currentView === 'customer' && (
